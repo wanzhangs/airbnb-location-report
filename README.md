@@ -46,4 +46,4 @@ python build_report.py
 
 ## GitHub Actions
 - **Build report** (`.github/workflows/build.yml`): main에 푸시하면 문법 검사 후 `report.html`을 다시 만들고 아티팩트로 올립니다.
-- **Refresh data** (`.github/workflows/refresh.yml`): Actions 탭에서 수동으로 실행하면 데이터를 새로 수집해 커밋합니다. 추가할 시군구를 입력할 수 있습니다. 정기 실행은 파일 안의 `schedule` 주석을 풀면 켜집니다. GitHub 러너는 해외 IP라 국내 사이트나 에어비앤비가 응답하지 않을 수 있고, 그 경우 PC에서 실행해 푸시합니다.
+- **Refresh data** (`.github/workflows/refresh.yml`): Actions 탭에서 수동으로 실행하면 데이터를 새로 수집해 커밋합니다. 추가할 시군구를 입력할 수 있습니다. 매주 월요일 03:00(한국 시간)에 자동으로도 실행됩니다. GitHub 러너는 해외 IP라 국내 사이트나 에어비앤비가 응답하지 않을 수 있고, 그 경우 PC에서 실행해 푸시합니다.
