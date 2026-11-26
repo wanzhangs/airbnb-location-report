@@ -22,6 +22,7 @@ import math
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -310,7 +311,7 @@ def fetch_rent_csv(sidos):
     MOLIT_DIR.mkdir(parents=True, exist_ok=True)
     page = "https://rt.molit.go.kr/pt/xls/xls.do?mobileAt="
     op = opener(page)
-    op.open(page, timeout=60).read()
+    op.open(page, timeout=25).read()
     codes = {x["ctprvnNm"]: x["signguCode"] for x in json.loads(op.open(urllib.request.Request(
         "https://rt.molit.go.kr/data/sido.do", data=b"", headers={"X-Requested-With": "XMLHttpRequest"}),
         timeout=60).read().decode("utf-8"))}
@@ -335,8 +336,8 @@ def fetch_rent_csv(sidos):
                     "https://rt.molit.go.kr/pt/xls/ptXlsCSVDown.do", data=body,
                     headers={"X-Requested-With": "XMLHttpRequest"}), timeout=300).read()
                 if b'"NO"' not in raw[:4000]:
-                    print(f"  [실패] {sido} {label}: CSV가 아닌 응답")
-                    continue
+                    # 일부 시도만 빠지면 그 지역 월세가 조용히 비게 된다: 실패로 처리해 직전 수집분으로 넘어가게 한다
+                    raise ConnectionError(f"국토부 {sido} {label}: CSV가 아닌 응답")
                 f.write_bytes(raw)
                 print(f"  국토부 {sido} {label} 전월세: {len(raw) / 1e6:.1f}MB 저장")
                 time.sleep(2)
@@ -397,7 +398,20 @@ def main():
     print(f"  검색 노출 {len(raw)}건 → 숙소 {len(listings)}곳")
 
     print("2) 국토부 전월세 실거래 수집")
-    rents = load_rents(fetch_rent_csv({a["sido"] for a in areas}), areas)
+    rent_meta = {"rent_from": RENT_FROM.isoformat(), "rent_to": RENT_TO.isoformat(), "rent_reused": False}
+    try:
+        rents = load_rents(fetch_rent_csv({a["sido"] for a in areas}), areas)
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        # 국토부 사이트는 해외 IP(GitHub 러너)에서 접속되지 않는다: 직전 results.json의 월세 계약을 그대로 쓴다
+        f = DATA / "results.json"
+        if not f.exists():
+            raise
+        prev = json.loads(f.read_text(encoding="utf-8"))
+        old = {a["name"]: a.get("rents") or [] for a in prev["areas"]}
+        rents = {a["key"]: old.get(a["name"], []) for a in areas}
+        rent_meta = {"rent_from": prev["meta"]["rent_from"], "rent_to": prev["meta"]["rent_to"], "rent_reused": True}
+        print(f"  국토부 사이트에 접속하지 못했습니다({e}).")
+        print(f"  직전 수집분의 월세 계약({rent_meta['rent_from']} ~ {rent_meta['rent_to']})을 그대로 씁니다.")
 
     out = []
     for a in areas:
@@ -412,7 +426,7 @@ def main():
     meta = {
         "collected_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "windows": [{"label": w[0], "checkin": w[1].isoformat(), "nights": w[2]} for w in WINDOWS],
-        "rent_from": RENT_FROM.isoformat(), "rent_to": RENT_TO.isoformat(),
+        **rent_meta,
         "pages": PAGES, "guests": 2,
     }
     (DATA / "results.json").write_text(
