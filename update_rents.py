@@ -168,13 +168,13 @@ def main():
             print(f"  [건너뜀] 국토부 시도 목록에 없는 이름: {sido} (가능한 이름: {', '.join(codes)})", flush=True)
             continue
         raw = None
-        for attempt in range(2):
+        for attempt in range(3):                      # 러너에서는 두 번째 요청부터 연결이 끊기는 일이 잦다
             try:
                 raw = download(op, sido, codes[sido], label)
                 break
             except NET_ERRORS as e:
                 print(f"  {key}: 실패 ({e})", flush=True)
-                time.sleep(6)
+                time.sleep(10 + 15 * attempt)
                 try:
                     op, codes = session()             # 끊긴 뒤에는 세션을 새로 연다
                 except NET_ERRORS:
