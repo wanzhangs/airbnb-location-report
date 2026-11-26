@@ -1,16 +1,18 @@
-"""에어비앤비 숙소 요금 × 국토부 전월세 실거래가 수집.
+"""에어비앤비 숙소 요금 수집 + 국토부 전월세 스냅샷 결합.
 
 실행:
+    python update_rents.py                     국토부 전월세 스냅샷 갱신 (한 달에 한 번이면 충분)
     python collect.py                          설정된 지역 중 아직 없는 곳만 수집
     python collect.py --add "부산광역시 기장군"  시군구를 추가하고 수집 (여러 개 가능)
     python collect.py --refresh                모든 지역을 새로 수집
 
 출력:
     data/areas/<지역>.json   지역별 에어비앤비 검색 결과 (지역 단위 캐시)
-    data/molit/*.csv         국토부 실거래가 공개시스템 전월세 CSV (시도별, 최근 6개월)
     data/results.json        지역별 숙소·월세 계약 (report.html이 읽는 데이터)
 
-API 키·로그인 없이 공개 검색 화면, 국토부 공식 CSV 다운로드, OSM 행정구역 경계 조회만 사용한다.
+API 키·로그인 없이 에어비앤비 공개 검색 화면과 OSM 행정구역 경계 조회만 사용한다.
+월세 계약은 update_rents.py가 받아 둔 data/rents/ 스냅샷을 읽는다(이 스크립트는 국토부에 접속하지 않는다).
+종료 코드 75: 접속하지 못했거나 수집량이 비정상적으로 적음(GitHub Actions가 다른 러너에서 다시 시도한다).
 """
 import base64
 import csv
@@ -27,9 +29,10 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from update_rents import load_meta as load_rent_meta, load_snapshot_rows
+
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
-MOLIT_DIR = DATA / "molit"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
 TODAY = dt.date.today()
@@ -82,8 +85,6 @@ WINDOWS = [
     ("weekday", next_weekday(_base, 1), 2),  # 화~목 2박
     ("weekend", next_weekday(_base, 4), 2),  # 금~일 2박
 ]
-RENT_FROM = TODAY - dt.timedelta(days=183)
-RENT_TO = TODAY
 
 
 def opener(referer=None):
@@ -305,73 +306,23 @@ def merge_listings(raw, areas):
     return out
 
 
-# ---------------------------------------------------------------- 국토부 전월세
-def fetch_rent_csv(sidos):
-    """시도별 연립다세대·단독다가구 전월세 CSV. 반환: {(시도, 유형): 파일}"""
-    MOLIT_DIR.mkdir(parents=True, exist_ok=True)
-    page = "https://rt.molit.go.kr/pt/xls/xls.do?mobileAt="
-    op = opener(page)
-    op.open(page, timeout=25).read()
-    codes = {x["ctprvnNm"]: x["signguCode"] for x in json.loads(op.open(urllib.request.Request(
-        "https://rt.molit.go.kr/data/sido.do", data=b"", headers={"X-Requested-With": "XMLHttpRequest"}),
-        timeout=60).read().decode("utf-8"))}
-    files = {}
-    for sido in sorted(sidos):
-        if sido not in codes:
-            print(f"  [건너뜀] 국토부 시도 목록에 없는 이름: {sido} (가능한 이름: {', '.join(codes)})")
-            continue
-        for code, label in (("B", "연립다세대"), ("C", "단독다가구")):
-            f = MOLIT_DIR / f"{sido}_{label}_전월세_{RENT_FROM:%Y%m%d}_{RENT_TO:%Y%m%d}.csv"
-            if not f.exists():
-                body = urllib.parse.urlencode({
-                    "srhThingNo": code, "srhDelngSecd": "2", "srhAddrGbn": "1", "srhLfstsSecd": "1",
-                    "sidoNm": sido, "sggNm": "전체", "emdNm": "전체", "loadNm": "전체",
-                    "areaNm": "전체", "hsmpNm": "전체", "mobileAt": "",
-                    "srhFromDt": RENT_FROM.isoformat(), "srhToDt": RENT_TO.isoformat(),
-                    "srhNewRonSecd": "", "srhSidoCd": codes[sido], "srhSggCd": "", "srhEmdCd": "",
-                    "srhRoadNm": "", "srhLoadCd": "", "srhHsmpCd": "", "srhArea": "",
-                    "srhFromAmount": "", "srhToAmount": "", "srhLrArea": "",
-                }).encode()
-                raw = op.open(urllib.request.Request(
-                    "https://rt.molit.go.kr/pt/xls/ptXlsCSVDown.do", data=body,
-                    headers={"X-Requested-With": "XMLHttpRequest"}), timeout=300).read()
-                if b'"NO"' not in raw[:4000]:
-                    # 일부 시도만 빠지면 그 지역 월세가 조용히 비게 된다: 실패로 처리해 직전 수집분으로 넘어가게 한다
-                    raise ConnectionError(f"국토부 {sido} {label}: CSV가 아닌 응답")
-                f.write_bytes(raw)
-                print(f"  국토부 {sido} {label} 전월세: {len(raw) / 1e6:.1f}MB 저장")
-                time.sleep(2)
-            files[(sido, label)] = f
-    return files
-
-
-def load_rents(files, areas):
+# ---------------------------------------------------------------- 월세 (국토부 스냅샷)
+def load_rents(areas):
     """지역별 신규 월세 계약 [면적, 보증금(만원), 월세(만원), 주택유형, 시군구·동, 도로명, 건축년도, 계약년월]"""
     out = {a["key"]: [] for a in areas}
     by_sido = {}
     for a in areas:
         by_sido.setdefault(a["sido"], []).append((f"{a['sido']} {a['gu']} ", a))
-    for (sido, label), f in files.items():
-        text = f.read_bytes().decode("cp949", errors="replace")
-        for row in csv.DictReader(io.StringIO(text[text.find('"NO"'):])):
-            if row.get("전월세구분") != "월세" or row.get("계약구분") != "신규":
-                continue
-            addr = row["시군구"].strip() + " "
-            hits = [a for pre, a in by_sido.get(sido, []) if addr.startswith(pre)]
+    for sido, lst in by_sido.items():
+        for sgg, area, dep, rent, label, road, built, ym in load_snapshot_rows(sido):
+            addr = sgg + " "
+            hits = [a for pre, a in lst if addr.startswith(pre)]
             if not hits:
-                continue
-            try:
-                area = float(row.get("전용면적(㎡)") or row.get("계약면적(㎡)"))
-                dep = int(row["보증금(만원)"].replace(",", ""))
-                rent = int(row["월세금(만원)"].replace(",", ""))
-            except Exception:
                 continue
             dong = addr.split(" ")[-2]
             for a in hits:
                 if not a["dongs"] or any(dong.startswith(d) for d in a["dongs"]):
-                    out[a["key"]].append([round(area, 1), dep, rent, label, " ".join(addr.split(" ")[2:]).strip(),
-                                          row.get("도로명") or "", row.get("건축년도") or "",
-                                          row.get("계약년월") or ""])
+                    out[a["key"]].append([area, dep, rent, label, " ".join(addr.split(" ")[2:]).strip(), road, built, ym])
     return out
 
 
@@ -401,21 +352,20 @@ def main():
         print(f"수집량이 비정상적으로 적습니다(지역 {len(areas)}곳, 숙소 {len(listings)}곳). 결과를 저장하지 않습니다.", flush=True)
         sys.exit(75)
 
-    print("2) 국토부 전월세 실거래 수집")
-    rent_meta = {"rent_from": RENT_FROM.isoformat(), "rent_to": RENT_TO.isoformat(), "rent_reused": False}
-    try:
-        rents = load_rents(fetch_rent_csv({a["sido"] for a in areas}), areas)
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        # 국토부 사이트는 해외 IP(GitHub 러너)에서 접속되지 않는다: 직전 results.json의 월세 계약을 그대로 쓴다
-        f = DATA / "results.json"
-        if not f.exists():
-            raise
-        prev = json.loads(f.read_text(encoding="utf-8"))
-        old = {a["name"]: a.get("rents") or [] for a in prev["areas"]}
-        rents = {a["key"]: old.get(a["name"], []) for a in areas}
-        rent_meta = {"rent_from": prev["meta"]["rent_from"], "rent_to": prev["meta"]["rent_to"], "rent_reused": True}
-        print(f"  국토부 사이트에 접속하지 못했습니다({e}).")
-        print(f"  직전 수집분의 월세 계약({rent_meta['rent_from']} ~ {rent_meta['rent_to']})을 그대로 씁니다.")
+    print("2) 월세 스냅샷 읽기 (data/rents)")
+    rents = load_rents(areas)
+    sidos = {a["sido"] for a in areas}
+    used = {k: m for k, m in load_rent_meta().items() if k.rsplit("_", 1)[0] in sidos}
+    if not used:
+        sys.exit("월세 스냅샷이 없습니다. 먼저 python update_rents.py 를 실행하세요.")
+    missing = sorted(sidos - {k.rsplit("_", 1)[0] for k in used})
+    if missing:
+        print(f"  [주의] 월세 스냅샷이 없는 시도: {', '.join(missing)} → python update_rents.py 로 받으세요")
+    saved = sorted(m["saved_at"] for m in used.values())
+    rent_meta = {"rent_from": min(m["rent_from"] for m in used.values()),
+                 "rent_to": max(m["rent_to"] for m in used.values()),
+                 "rent_saved": saved[0] if saved[0] == saved[-1] else f"{saved[0]} ~ {saved[-1]}"}
+    print(f"  스냅샷 {len(used)}개 · 저장일 {rent_meta['rent_saved']}")
 
     out = []
     for a in areas:

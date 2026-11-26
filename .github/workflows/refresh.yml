@@ -3,11 +3,9 @@ name: Refresh data
 # 에어비앤비 검색 결과·숙소 상세를 새로 수집해 data/와 report.html을 커밋한다.
 # 매주 월요일 03:00(한국 시간)에 자동 실행되고, Actions 탭에서 수동으로도 실행할 수 있다. LLM API나 별도 키는 쓰지 않는다.
 #
-# GitHub 러너는 해외 IP라 국토부 실거래가 사이트 접속이 러너에 따라 되기도 하고 안 되기도 한다.
-# - 국토부에 접속하지 못하면 저장소에 있는 직전 수집분의 월세 계약을 그대로 쓴다.
-#   월세 계약은 PC에서 collect.py --refresh 를 실행해 푸시하면 갱신된다.
-# - 에어비앤비 수집량이 비정상적으로 적으면(차단·접속 실패) 새 러너에서 다시 시도한다(최대 3번).
-#   3번 모두 안 되면 실패로 끝나고 기존 리포트는 그대로 남는다.
+# 임차 비용에는 Update rents 워크플로가 받아 둔 월세 스냅샷(data/rents/)을 쓴다(이 워크플로는 국토부에 접속하지 않는다).
+# 에어비앤비 수집량이 비정상적으로 적으면(차단·접속 실패) 새 러너에서 다시 시도한다(최대 3번).
+# 3번 모두 안 되면 실패로 끝나고 기존 리포트는 그대로 남는다. 끝나면 Build and publish report가 Pages에 배포한다.
 on:
   workflow_dispatch:
     inputs:
@@ -22,7 +20,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: refresh
+  group: repo-write
   cancel-in-progress: false
 
 jobs:
