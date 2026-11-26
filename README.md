@@ -46,4 +46,4 @@ python build_report.py
 
 ## GitHub Actions
 - **Build report** (`.github/workflows/build.yml`): main에 푸시하면 문법 검사 후 `report.html`을 다시 만들고 아티팩트로 올립니다.
-- **Refresh data** (`.github/workflows/refresh.yml`): Actions 탭에서 수동으로 실행하면 데이터를 새로 수집해 커밋합니다. 추가할 시군구를 입력할 수 있습니다. 매주 월요일 03:00(한국 시간)에 자동으로도 실행됩니다. 국토부 실거래가 사이트는 해외 IP(GitHub 러너)에서 접속되지 않아, 러너는 에어비앤비 요금과 숙소 상세만 새로 받고 월세 계약은 저장소의 직전 수집분을 그대로 씁니다. 월세 계약은 PC에서 `python collect.py --refresh`를 실행해 푸시하면 갱신됩니다.
+- **Refresh data** (`.github/workflows/refresh.yml`): Actions 탭에서 수동으로 실행하면 데이터를 새로 수집해 커밋합니다. 추가할 시군구를 입력할 수 있습니다. 매주 월요일 03:00(한국 시간)에 자동으로도 실행됩니다. GitHub 러너는 해외 IP라 국토부 실거래가 사이트 접속이 러너에 따라 되기도 하고 안 되기도 합니다. 접속하지 못하면 월세 계약은 저장소의 직전 수집분을 그대로 쓰고, 에어비앤비 수집량이 비정상적으로 적으면 새 러너에서 최대 3번까지 다시 시도합니다(`refresh-once.yml`). 3번 모두 실패하면 워크플로가 실패로 끝나고 기존 리포트는 그대로 남습니다. 월세 계약은 PC에서 `python collect.py --refresh`를 실행해 푸시하면 갱신됩니다.

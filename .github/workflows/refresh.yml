@@ -1,9 +1,13 @@
 name: Refresh data
 
-# 에어비앤비 검색 결과·국토부 전월세·숙소 상세를 새로 수집해 data/와 report.html을 커밋한다.
+# 에어비앤비 검색 결과·숙소 상세를 새로 수집해 data/와 report.html을 커밋한다.
 # 매주 월요일 03:00(한국 시간)에 자동 실행되고, Actions 탭에서 수동으로도 실행할 수 있다. LLM API나 별도 키는 쓰지 않는다.
-# 국토부 실거래가 사이트는 해외 IP(GitHub 러너)에서 접속되지 않는다. 러너는 에어비앤비 요금과 숙소 상세만 새로 받고,
-# 월세 계약은 저장소에 있는 직전 수집분을 그대로 쓴다. 월세 계약은 PC에서 collect.py를 실행해 푸시하면 갱신된다.
+#
+# GitHub 러너는 해외 IP라 국토부 실거래가 사이트 접속이 러너에 따라 되기도 하고 안 되기도 한다.
+# - 국토부에 접속하지 못하면 저장소에 있는 직전 수집분의 월세 계약을 그대로 쓴다.
+#   월세 계약은 PC에서 collect.py --refresh 를 실행해 푸시하면 갱신된다.
+# - 에어비앤비 수집량이 비정상적으로 적으면(차단·접속 실패) 새 러너에서 다시 시도한다(최대 3번).
+#   3번 모두 안 되면 실패로 끝나고 기존 리포트는 그대로 남는다.
 on:
   workflow_dispatch:
     inputs:
@@ -22,40 +26,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  try1:
+    uses: ./.github/workflows/refresh-once.yml
+    with:
+      add: ${{ inputs.add }}
+  try2:
+    needs: try1
+    if: ${{ !cancelled() && needs.try1.outputs.ok != 'true' }}
+    uses: ./.github/workflows/refresh-once.yml
+    with:
+      add: ${{ inputs.add }}
+  try3:
+    needs: [try1, try2]
+    if: ${{ !cancelled() && needs.try1.outputs.ok != 'true' && needs.try2.outputs.ok != 'true' }}
+    uses: ./.github/workflows/refresh-once.yml
+    with:
+      add: ${{ inputs.add }}
+  result:
+    needs: [try1, try2, try3]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: 검색 결과·월세 수집
+      - name: 결과 확인
         env:
-          ADD: ${{ inputs.add }}
+          OK1: ${{ needs.try1.outputs.ok }}
+          OK2: ${{ needs.try2.outputs.ok }}
+          OK3: ${{ needs.try3.outputs.ok }}
         run: |
-          if [ -n "$ADD" ]; then python collect.py --add "$ADD"; else python collect.py; fi
-      - name: 수집 결과 검사
-        run: |
-          python - <<'EOF'
-          import json
-          d = json.load(open("data/results.json", encoding="utf-8"))
-          n = sum(len(a["listings"]) for a in d["areas"])
-          r = sum(len(a["rents"]) for a in d["areas"])
-          print(f"지역 {len(d['areas'])}곳 · 숙소 {n}곳 · 월세 계약 {r}건")
-          assert len(d["areas"]) >= 5 and n >= 300 and r >= 1000, "수집량이 비정상적으로 적어 커밋하지 않습니다"
-          EOF
-      - name: 숙소 상세 수집
-        run: python collect_details.py
-      - name: 리포트 생성
-        run: python build_report.py
-      - name: 커밋
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/results.json data/details.json report.html areas_extra.json 2>/dev/null || git add data/results.json data/details.json report.html
-          if git diff --cached --quiet; then echo "변경 없음"; else git commit -m "데이터 갱신 $(date -u +%Y-%m-%d)" && git push; fi
-      - uses: actions/upload-artifact@v4
-        with:
-          name: report
-          path: report.html
+          if [ "$OK1" = "true" ] || [ "$OK2" = "true" ] || [ "$OK3" = "true" ]; then
+            echo "갱신 완료 (시도별 결과: 1차 ${OK1:-건너뜀} / 2차 ${OK2:-건너뜀} / 3차 ${OK3:-건너뜀})" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::세 번 모두 갱신하지 못했습니다. 기존 리포트는 그대로입니다. PC에서 python collect.py --refresh, python collect_details.py, python build_report.py 를 실행해 푸시하세요."
+            exit 1
+          fi

@@ -396,6 +396,10 @@ def main():
     areas = [a for a in areas if a.get("center")]
     listings = merge_listings(raw, areas)
     print(f"  검색 노출 {len(raw)}건 → 숙소 {len(listings)}곳")
+    if len(areas) < 5 or len(listings) < 300:
+        # 차단되었거나 접속하지 못해 거의 못 받은 경우: 기존 결과를 덮어쓰지 않고 끝낸다
+        print(f"수집량이 비정상적으로 적습니다(지역 {len(areas)}곳, 숙소 {len(listings)}곳). 결과를 저장하지 않습니다.", flush=True)
+        sys.exit(75)
 
     print("2) 국토부 전월세 실거래 수집")
     rent_meta = {"rent_from": RENT_FROM.isoformat(), "rent_to": RENT_TO.isoformat(), "rent_reused": False}
@@ -436,4 +440,9 @@ def main():
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    main()
+    try:
+        main()
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+        # 종료 코드 75: 대상 사이트에 접속하지 못함(코드 오류가 아님). GitHub Actions가 다른 러너에서 다시 시도한다.
+        print(f"수집 대상 사이트에 접속하지 못했습니다: {e}", flush=True)
+        sys.exit(75)
