@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>에어비앤비 수익성 검토</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f9f9f9; --surface: #ffffff; --text: #191919; --text2: #666666;
+  --grid: #e7e7e7; --axis: #c2c2c2; --border: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
+  --s1: #257de0; --s2: #f47230; --s3: #00b894; --good-text: #006c10; --critical: #dc3c3d;
+}
+@media (prefers-color-scheme: dark) {
+  .viz-root {
+    color-scheme: dark;
+    --page: #0b0b0b; --surface: #191919; --text: #efefef; --text2: #9c9c9c;
+    --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.06);
+    --s1: #338ced; --s2: #e76624; --s3: #00a888; --good-text: #53c556; --critical: #dc3c3d;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text);
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; }
+h1 { font-size: 22px; margin: 0 0 2px; }
+h2 { font-size: 16px; margin: 0 0 2px; }
+h3 { font-size: 14px; margin: 18px 0 4px; }
+.sub { color: var(--text2); margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-top: 16px; }
+.controls { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin-top: 14px; }
+@media (min-width: 900px) and (min-height: 700px) { .controls { position: sticky; top: 8px; z-index: 1500; box-shadow: 0 4px 14px rgba(0,0,0,.08); } }
+.crow { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+.crow + .crow { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--grid); }
+.crow .cap { font-weight: 600; font-size: 13px; min-width: 64px; }
+.crow label { color: var(--text2); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.crow output { color: var(--text); font-weight: 600; min-width: 34px; font-variant-numeric: tabular-nums; }
+select, input { font: inherit; color: var(--text); accent-color: var(--s1); }
+select, input[type=number] { background: var(--surface); border: 1px solid var(--axis); border-radius: 6px; padding: 4px 8px; }
+input[type=number] { width: 84px; text-align: right; }
+input[type=range] { width: 110px; }
+.hero { display: grid; grid-template-columns: minmax(260px, 1.25fr) 2fr; gap: 12px; margin-top: 16px; }
+@media (max-width: 800px) { .hero { grid-template-columns: 1fr; } }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.tile .label { color: var(--text2); font-size: 13px; }
+.tile .value { font-size: 24px; font-weight: 600; line-height: 1.3; }
+.tile .note { color: var(--text2); font-size: 12px; }
+.tile.big .value { font-size: 52px; line-height: 1.15; }
+.tile.big .where { font-weight: 600; margin-bottom: 6px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--text2); font-size: 13px; margin: 8px 0 4px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.key { width: 16px; height: 2px; display: inline-block; }
+.line { width: 2px; height: 14px; background: var(--text2); display: inline-block; }
+svg text { fill: var(--text2); font-size: 12px; font-variant-numeric: tabular-nums; }
+svg text.strong { fill: var(--text); font-weight: 600; }
+.rhead, .rrow { display: grid; grid-template-columns: 150px 1fr 84px 92px 150px 104px; gap: 10px; align-items: center; }
+@media (max-width: 860px) { .rhead, .rrow { grid-template-columns: 120px 1fr 84px 92px; } .rhead > :nth-child(n+5), .rrow > :nth-child(n+5) { display: none; } }
+.rhead { color: var(--text2); font-size: 12px; padding-bottom: 4px; border-bottom: 1px solid var(--grid); margin-top: 10px; }
+.rrow { padding: 5px 0; cursor: pointer; border-radius: 6px; }
+.rrow:hover, .rrow.sel { background: var(--wash); }
+.nm { padding-left: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rrow .v { font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.rrow .v.b { font-weight: 600; }
+.track { position: relative; height: 16px; }
+.bar { position: absolute; top: 0; height: 16px; background: var(--s1); }
+.bar.r { border-radius: 0 4px 4px 0; } .bar.l { border-radius: 4px 0 0 4px; }
+.vline { position: absolute; top: -5px; bottom: -5px; width: 1px; background: var(--axis); }
+.rail { position: absolute; top: 7px; height: 2px; background: var(--grid); }
+.track i.pt { position: absolute; top: 3px; width: 10px; height: 10px; border-radius: 50%; margin-left: -5px; box-shadow: 0 0 0 2px var(--surface); }
+.track i.tick { position: absolute; top: 0; width: 2px; height: 16px; margin-left: -1px; background: var(--text2); }
+.ticks { position: relative; height: 18px; }
+.ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.mrow { display: grid; grid-template-columns: 120px 1fr 150px; gap: 10px; align-items: center; padding: 4px 0; }
+.mrow .v { color: var(--text2); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mrow .v b { color: var(--text); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 8px 32px; }
+#map { height: 400px; border-radius: 8px; margin-top: 10px; border: 1px solid var(--border); }
+.tablewrap { overflow-x: auto; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 7px 8px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+th { color: var(--text2); font-weight: 600; white-space: nowrap; }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tbody tr.row { cursor: pointer; }
+tbody tr.row:hover, tbody tr.row.sel { background: var(--wash); }
+.small { color: var(--text2); font-size: 12px; }
+.pos { color: var(--good-text); font-weight: 600; } .neg { color: var(--critical); font-weight: 600; }
+.badge { display: inline-block; border: 1px solid var(--border); background: var(--wash); border-radius: 999px; padding: 0 8px; font-size: 12px; margin-left: 6px; white-space: nowrap; }
+a { color: var(--s1); }
+.notes li, .bul li { margin-bottom: 4px; }
+.bul { margin: 6px 0 0; padding-left: 18px; }
+.warn { border-left: 3px solid var(--critical); padding: 4px 0 4px 12px; margin-top: 10px; }
+details > summary { cursor: pointer; font-weight: 600; font-size: 16px; }
+#tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.14); max-width: 320px; display: none; z-index: 3000; }
+#tip .t2 { color: var(--text2); }
+.leaflet-tooltip.arealabel { background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: none; font-weight: 600; padding: 1px 6px; }
+.leaflet-tooltip.arealabel::before { display: none; }
+</style>
+</head>
+<body class="viz-root">
+<main>
+  <h1>에어비앤비 수익성 검토</h1>
+  <p class="sub" id="subtitle"></p>
+
+  <div class="controls" id="controls">
+    <div class="crow">
+      <span class="cap">조건</span>
+      <label>범위 <select id="fScope"></select></label>
+      <label>지역 <select id="fArea"></select></label>
+      <label>보증금 한도 <input type="number" id="fDep" min="0" step="500" value="2000">만</label>
+      <label>월세 한도 <input type="number" id="fRent" min="0" step="10" value="100">만</label>
+      <label>집 크기 <select id="fTier">
+        <option value="auto">자동 (순이익 최대)</option><option value="1">침실 1개급 (33㎡ 미만)</option>
+        <option value="2">침실 2개급 (33~55㎡)</option><option value="3">침실 3개 이상급 (55㎡ 이상)</option>
+      </select></label>
+    </div>
+    <div class="crow">
+      <span class="cap">가정</span>
+      <label>가동률 <input type="range" id="fOcc" min="20" max="90" step="5" value="55"><output id="oOcc"></output></label>
+      <label>평균 숙박 <select id="fStay"><option value="2">2박</option><option value="3" selected>3박</option><option value="4">4박</option><option value="5">5박</option><option value="7">7박</option></select></label>
+      <label>운영비·수수료 <input type="range" id="fCost" min="10" max="50" step="5" value="30"><output id="oCost"></output></label>
+      <label>초기 세팅비 <input type="number" id="fSetup" min="0" step="100" value="1000">만</label>
+    </div>
+  </div>
+
+  <div class="hero" id="hero"></div>
+
+  <section class="card">
+    <h2>투자금 회수 일정</h2>
+    <p class="sub">초기 세팅비를 월 순이익으로 메워 가는 누적 현금 흐름입니다. 선이 0을 넘는 달이 회수 시점입니다. 보증금은 계약이 끝나면 돌려받으므로 회수 대상에서 뺐습니다.</p>
+    <div class="legend" id="payLegend"></div>
+    <div id="payChart"></div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>가정</th><th class="num">가동률</th><th class="num">월 숙박 / 예약</th><th class="num">월 매출</th><th class="num">월 순이익</th><th class="num">세팅비 회수</th><th class="num">3년 누적</th><th class="num">연 수익률</th></tr></thead>
+      <tbody id="payBody"></tbody>
+    </table></div>
+  </section>
+
+  <section class="card">
+    <h2>같은 조건으로 본 지역 순위</h2>
+    <p class="sub" id="rankSub"></p>
+    <div id="rank"></div>
+  </section>
+
+  <section class="card">
+    <h2 id="evTitle">근거: 매물과 비교 숙소</h2>
+    <p class="sub">위 숫자가 어떤 계약과 어떤 숙소에서 나왔는지 보여 줍니다. 집 크기 행을 누르면 조건의 집 크기가 바뀝니다.</p>
+    <div id="evidence"></div>
+  </section>
+
+  <section class="card">
+    <h2 id="cautionTitle">유의사항과 특이사항</h2>
+    <p class="sub">이 지역에서 후기가 많은 숙소들의 상세 페이지에 공개된 항목별 평점, 후기 주제 집계, 숙소 주의 고지를 모은 것입니다.</p>
+    <div id="caution"></div>
+  </section>
+
+  <section class="card">
+    <h2>지도: 조사한 숙소 위치</h2>
+    <p class="sub">지역 이름을 누르면 그 지역으로 조건이 바뀝니다. 에어비앤비는 숙소 위치를 100~200m쯤 흐려서 공개합니다.</p>
+    <div id="map"></div>
+    <p class="sub" id="mapnote" hidden>지도 라이브러리를 불러오지 못했습니다(인터넷 연결 필요). 나머지 내용은 그대로 볼 수 있습니다.</p>
+  </section>
+
+  <section class="card notes">
+    <details open>
+      <summary>계산 방법과 한계</summary>
+      <div class="warn"><b>먼저 확인할 것: 등록 요건.</b> 외국인관광 도시민박업은 사업자가 실제 거주하는 주택(단독·다가구·다세대·연립·아파트, 연면적 230㎡ 미만)만 등록할 수 있고 오피스텔과 원룸형 도시형생활주택은 대상이 아닙니다. 집을 따로 빌려 통째로 운영하는 방식은 이 요건에 걸릴 수 있으므로, 아래 수치는 시장 신호로만 보고 관할 시군구청에 등록 가능 여부를 먼저 확인해야 합니다. 농어촌 지역은 농어촌민박업 등 다른 제도가 적용될 수 있습니다.
+        <span class="small">참고: <a href="https://news.airbnb.com/wp-content/uploads/sites/4/2025/07/%EC%99%B8%EB%8F%84%EB%AF%BC.pdf" target="_blank" rel="noopener">에어비앤비 등록 체크리스트(2025.7)</a> · <a href="https://www.newsis.com/view/NISX20260728_0003726604" target="_blank" rel="noopener">요금표 게시 의무 보도(2026.7)</a> · <a href="https://v.daum.net/v/20260803110232369" target="_blank" rel="noopener">공유숙박 규제 보도(2026.8)</a></span></div>
+      <ul>
+        <li><b>계산식.</b> 월 매출 = 1박 요금(평일 5 : 주말 2 가중 중앙값) × 30.4일 × 가동률. 월 순이익 = 월 매출 − 운영비·수수료(매출의 일정 비율) − 월세. 기대 임차 횟수 = 월 숙박일 ÷ 평균 숙박일. 세팅비 회수 = 초기 세팅비 ÷ 월 순이익. 연 수익률 = 월 순이익 × 12 ÷ (보증금 + 초기 세팅비).</li>
+        <li><b>가동률·평균 숙박일·운영비·세팅비는 측정값이 아니라 가정입니다.</b> 실제 예약률은 이 데이터로 알 수 없습니다. 회수 일정은 가동률을 15%p 낮춘 경우와 높인 경우를 함께 그렸습니다.</li>
+        <li><b>월세와 보증금</b>은 국토부 실거래가의 연립·다세대·단독·다가구 신규 월세 계약 중 예산 한도 안, 해당 크기 계약의 중앙값입니다. 환산 월 비용이 ㎡당 4,500원 미만인 계약 <span id="nDropped"></span>건은 공공임대나 특수관계 거래로 보고 뺐습니다. 세금, 중개수수료, 공실 기간의 월세는 포함하지 않았습니다.</li>
+        <li><b>1박 요금은 검색에 노출된 숙소 기준</b>입니다. 지역마다 날짜 두 구간에서 50곳 안팎을 봤고, 게스트 2명·2박 기준 결제 총액(청소비·서비스 수수료 포함)을 1박으로 나눴습니다. 상위 노출 숙소는 후기가 많은 기존 숙소라 신규 숙소가 같은 요금을 받기는 어렵습니다. 요금 시점은 약 6주 뒤(1월 중순)입니다.</li>
+        <li><b>지역 단위가 다릅니다.</b> 서울은 동 단위(중심에서 사방 약 700m), 서울 외는 시군구 행정경계 안의 숙소입니다. <b>서울 외 지역의 수익은 실제보다 좋게 나옵니다.</b> 숙소는 관광지 주변의 독채·한옥·펜션형에 몰려 있는데 월세는 시군구 전체의 일반 주택 계약이라 서로 다른 집을 비교하게 됩니다.</li>
+        <li><b>자동으로 고르는 집 크기</b>는 예산이 그 크기 계약의 30% 이상을 덮는 경우만 후보로 삼습니다. 예산보다 훨씬 큰 집이 드물게 싸게 계약된 사례로 수익이 부풀려지는 것을 막기 위한 기준입니다. <b>집 크기와 침실 수의 대응</b>(33㎡ 미만 → 침실 1개, 33~55㎡ → 2개, 55㎡ 이상 → 3개 이상)은 어림 기준입니다. <b>최대 인원</b>은 상세 페이지를 확인한 숙소는 실제 값, 나머지는 침대 수로 추정한 값입니다.</li>
+        <li><b>유의사항은 후기 원문을 읽은 결과가 아닙니다.</b> 후기 본문은 공개 페이지에 들어 있지 않아, 에어비앤비가 후기에서 집계해 공개하는 항목별 평점·주제별 언급 수와 호스트가 고지한 안전·공간 정보를 썼습니다. 인근 관광지 후기는 포함하지 않았습니다.</li>
+        <li>이 페이지는 입지 1차 검토용이며 투자 권유가 아닙니다.</li>
+      </ul>
+    </details>
+  </section>
+</main>
+<div id="tip"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const DATA = /*__DATA__*/null;
+const areas = DATA.areas.filter(a => a.listings.length), meta = DATA.meta;
+// 시세로 보기 어려운 초저가 계약(공공임대·특수관계 거래로 추정)은 뺀다: 환산 월 비용이 ㎡당 4,500원 미만
+let dropped = 0;
+areas.forEach(a => { const n = a.rents.length; a.rents = a.rents.filter(r => (r[2] + r[1] * 0.05 / 12) * 1e4 / Math.max(r[0], 1) >= 4500); dropped += n - a.rents.length; });
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const man = v => v == null || isNaN(v) ? '–' : Math.abs(v) >= 1e8 ? (v / 1e8).toFixed(2).replace(/\.?0+$/, '') + '억' : (v / 1e4).toFixed(Math.abs(v) < 1e6 ? 1 : 0).replace(/\.0$/, '') + '만';
+const signed = v => v == null || isNaN(v) ? '–' : (v >= 0 ? '+' : '−') + man(Math.abs(v));
+const med = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const avg = a => a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
+const TIERS = [
+  { k: 1, label: '침실 1개급', size: '33㎡ 미만', lo: 0, hi: 33 },
+  { k: 2, label: '침실 2개급', size: '33~55㎡', lo: 33, hi: 55 },
+  { k: 3, label: '침실 3개 이상급', size: '55㎡ 이상', lo: 55, hi: 1e9 },
+];
+const bucket = b => b == null ? null : b <= 1 ? 1 : b === 2 ? 2 : 3;
+const MIN_N = 5, MONTHS = 36;
+const state = { sel: null };
+const byName = n => areas.find(a => a.name === n);
+const scopeOf = a => a.unit === '동' ? '서울특별시' : a.sido;
+
+// ---------- 최대 인원: 상세 페이지 값이 있으면 그대로, 없으면 침대 수로 추정
+function beds(l) {
+  let typed = 0, generic = 0, any = false;
+  (l.info || '').split(' · ').forEach(t => {
+    const m = t.match(/^(.*?)\s*침대\s*(\d+)개$/);
+    if (!m) return;
+    any = true;
+    const n = +m[2], k = m[1];
+    if (/퀸|킹|더블|이층/.test(k)) typed += 2 * n; else if (/싱글|소파|유아/.test(k)) typed += n; else generic += n;
+  });
+  return any ? { typed, generic } : null;
+}
+const calib = (() => {
+  const r = [];
+  areas.forEach(a => a.listings.forEach(l => { const b = beds(l); if (l.cap && b && b.generic && !b.typed) r.push(l.cap / b.generic); }));
+  return Math.max(1.2, Math.min(2.2, med(r) ?? 1.8));
+})();
+function capOf(l) {
+  if (l.cap) return { v: l.cap, exact: true };
+  const b = beds(l);
+  return b ? { v: Math.max(1, Math.round(b.typed + b.generic * calib)), exact: false } : { v: null, exact: false };
+}
+const capText = l => { const c = capOf(l); return c.v == null ? '–' : c.v + '명' + (c.exact ? '' : ' <span class="small">(추정)</span>'); };
+
+const win = Object.fromEntries(meta.windows.map(w => [w.label, w]));
+$('#subtitle').textContent = `지역 ${areas.length}곳 · 숙소 ${areas.reduce((s, a) => s + a.listings.length, 0).toLocaleString()}곳 · 요금 기준일 평일 ${win.weekday.checkin} / 주말 ${win.weekend.checkin} · 월세 계약 ${meta.rent_from} ~ ${meta.rent_to} · 수집 ${meta.collected_at}`;
+$('#nDropped').textContent = dropped.toLocaleString();
+
+// ---------- 조건 컨트롤 (모든 영역이 이 값을 함께 쓴다)
+const scopes = [...new Set(areas.map(scopeOf))];
+$('#fScope').innerHTML = '<option value="">전체</option>' + scopes.map(s => `<option value="${esc(s)}">${esc(s)}${s === '서울특별시' ? ' (동 단위)' : ' (시군구 단위)'}</option>`).join('');
+const inScope = a => !$('#fScope').value || scopeOf(a) === $('#fScope').value;
+function fillAreas() {
+  const cur = state.sel;
+  $('#fArea').innerHTML = scopes.filter(s => !$('#fScope').value || s === $('#fScope').value)
+    .map(s => `<optgroup label="${esc(s)}">${areas.filter(a => scopeOf(a) === s).map(a => `<option>${esc(a.name)}</option>`).join('')}</optgroup>`).join('');
+  if (cur) $('#fArea').value = cur;
+}
+function params() {
+  return { dep: +$('#fDep').value || 0, rent: +$('#fRent').value || 0, tier: $('#fTier').value,
+    occ: +$('#fOcc').value / 100, stay: +$('#fStay').value, cost: +$('#fCost').value / 100, setup: (+$('#fSetup').value || 0) * 1e4 };
+}
+
+// ---------- 계산
+function nightly(ls) {
+  const wd = med(ls.filter(l => l.prices.weekday).map(l => l.prices.weekday));
+  const we = med(ls.filter(l => l.prices.weekend).map(l => l.prices.weekend));
+  return { wd, we, n: wd != null && we != null ? (wd * 5 + we * 2) / 7 : (wd ?? we) };
+}
+function evalTier(a, t, P) {
+  const all = a.rents.filter(r => r[0] >= t.lo && r[0] < t.hi), cs = all.filter(r => r[1] <= P.dep && r[2] <= P.rent);
+  const ls = a.listings.filter(l => bucket(l.bedrooms) === t.k), p = nightly(ls);
+  const caps = ls.map(capOf).filter(c => c.v != null), cv = caps.map(c => c.v).sort((x, y) => x - y);
+  const rentM = cs.length ? med(cs.map(r => r[2])) * 1e4 : null, depM = cs.length ? med(cs.map(r => r[1])) * 1e4 : null;
+  // feasible: 계산할 만큼 사례가 있음 / common: 예산이 그 크기 계약의 30% 이상을 덮어 실제로 구할 만함
+  const share = all.length ? cs.length / all.length : 0, common = cs.length >= 5 && share >= 0.3;
+  const feasible = cs.length >= 3, comps = ls.length >= MIN_N && p.n != null, ok = feasible && comps;
+  const fin = occ => {
+    const nights = 30.4 * occ, rev = p.n * nights, opex = rev * P.cost, profit = rev - opex - rentM, invest = depM + P.setup;
+    return { occ, nights, bookings: nights / P.stay, rev, opex, profit, invest,
+      payback: profit > 0 ? P.setup / profit : null, roi: invest > 0 ? profit * 12 / invest : null, cum: m => -P.setup + profit * m };
+  };
+  return { t, all, cs, ls, p, capMed: med(cv), capLo: cv[Math.floor(cv.length * 0.1)], capHi: cv[Math.ceil(cv.length * 0.9) - 1],
+    exact: caps.filter(c => c.exact).length, est: caps.filter(c => !c.exact).length, rentM, depM, feasible, comps, ok, share, common,
+    be: ok ? rentM / (p.n * 30.4 * (1 - P.cost)) : null, fin: ok ? fin : null, base: ok ? fin(P.occ) : null };
+}
+function evalArea(a, P) {
+  const rows = TIERS.map(t => evalTier(a, t, P)), okRows = rows.filter(r => r.ok && r.common);
+  const best = okRows.length ? okRows.reduce((x, y) => y.base.profit > x.base.profit ? y : x) : null;
+  const fallback = [...rows].sort((x, y) => (y.ok - x.ok) || (y.share - x.share))[0];
+  const pick = P.tier === 'auto' ? (best || fallback) : rows.find(r => r.t.k === +P.tier);
+  return { a, rows, best, pick };
+}
+const payText = m => m == null ? '회수 불가' : m > 120 ? '10년 초과' : m < 1 ? '1개월 이내' : `${Math.ceil(m)}개월`;
+const payDate = m => { if (m == null || m > 120) return ''; const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + Math.ceil(m)); return `${d.getFullYear()}년 ${d.getMonth() + 1}월`; };
+
+const tip = $('#tip');
+function showTip(html, x, y) {
+  tip.innerHTML = html; tip.style.display = 'block';
+  const r = tip.getBoundingClientRect();
+  tip.style.left = Math.min(x + 14, innerWidth - r.width - 8) + 'px';
+  tip.style.top = Math.max(8, Math.min(y + 14, innerHeight - r.height - 8)) + 'px';
+}
+const hideTip = () => { tip.style.display = 'none'; };
+
+// ---------- 1. 핵심 숫자
+function drawHero(E, P) {
+  const r = E.pick, a = E.a, b = r.base;
+  const where = `${esc(a.name)} · ${r.t.label} (${r.t.size})`;
+  if (!b) {
+    const why = !r.feasible ? `이 예산(보증금 ${P.dep.toLocaleString()}만·월세 ${P.rent.toLocaleString()}만 이하)으로 계약된 ${r.t.label} 사례가 ${r.cs.length}건뿐입니다. 예산을 올리거나 집 크기·지역을 바꿔 보세요.`
+      : `이 크기의 비교 숙소가 ${r.ls.length}곳뿐이라 요금을 추정하기 어렵습니다. 집 크기를 바꿔 보세요.`;
+    $('#hero').innerHTML = `<div class="tile big"><div class="where">${where}</div><div class="label">월 순이익</div><div class="value">–</div><div class="note">${why}</div></div><div class="tiles"></div>`;
+    return;
+  }
+  const T = [
+    ['기대 임차 횟수', `월 ${b.bookings.toFixed(1)}건`, `숙박 ${b.nights.toFixed(1)}박 ÷ 평균 ${P.stay}박 · 연 ${Math.round(b.bookings * 12)}건`],
+    ['세팅비 회수', payText(b.payback), b.payback != null ? `${payDate(b.payback)} 예상 · 세팅비 ${man(P.setup)}` : '월 순이익이 0 이하입니다'],
+    ['연 수익률', b.roi != null ? `${Math.round(b.roi * 100)}%` : '–', `초기 투자금 ${man(b.invest)} 대비 (보증금 ${man(r.depM)} + 세팅비 ${man(P.setup)})`],
+    ['손익분기 가동률', `${Math.round(r.be * 100)}%`, `한 달에 ${(30.4 * r.be).toFixed(1)}박 넘게 채우면 월세를 넘깁니다`],
+    ['받을 수 있는 인원', r.capMed != null ? `최대 ${Math.round(r.capMed)}명` : '–', `대부분 ${r.capLo}~${r.capHi}명 · 확인 ${r.exact}곳 / 추정 ${r.est}곳`],
+    ['1박 요금', `${man(r.p.n)}`, `평일 ${man(r.p.wd)} · 주말 ${man(r.p.we)} · 비교 숙소 ${r.ls.length}곳`],
+  ];
+  $('#hero').innerHTML = `<div class="tile big">
+      <div class="where">${where}${E.best && E.best.t.k === r.t.k && P.tier === 'auto' ? '<span class="badge">이 예산에서 순이익 최대</span>' : ''}</div>
+      <div class="label">월 순이익 (가동률 ${Math.round(P.occ * 100)}% 가정)</div>
+      <div class="value ${b.profit < 0 ? 'neg' : ''}">${signed(b.profit)}</div>
+      <div class="note">매출 ${man(b.rev)} − 운영비·수수료 ${man(b.opex)} − 월세 ${man(r.rentM)}</div>
+      <div class="note" style="margin-top:6px">예산 안에서 계약된 ${r.t.label} ${r.cs.length}건의 중앙값: 보증금 ${man(r.depM)} / 월세 ${man(r.rentM)}</div>
+      ${r.common ? '' : `<div class="note neg" style="margin-top:6px">주의: 이 예산은 이 크기 계약의 ${Math.round(r.share * 100)}%만 덮습니다. 구하기 어렵고, 싼 데는 노후·반지하 같은 이유가 있을 수 있어 수익이 실제보다 좋게 나옵니다.</div>`}
+    </div>
+    <div class="tiles">${T.map(t => `<div class="tile"><div class="label">${t[0]}</div><div class="value">${t[1]}</div><div class="note">${t[2]}</div></div>`).join('')}</div>`;
+}
+
+// ---------- 2. 회수 일정
+function drawPayback(E, P) {
+  const r = E.pick, box = $('#payChart');
+  if (!r.fin) { box.innerHTML = '<p class="sub" style="margin-top:10px">이 조건으로는 계산할 표본이 부족합니다.</p>'; $('#payBody').innerHTML = ''; $('#payLegend').innerHTML = ''; return; }
+  const S = [
+    { name: '보수적', occ: Math.max(0.1, P.occ - 0.15), c: 'var(--s2)' },
+    { name: '기본', occ: P.occ, c: 'var(--s1)' },
+    { name: '낙관적', occ: Math.min(0.95, P.occ + 0.15), c: 'var(--s3)' },
+  ].map(s => ({ ...s, f: r.fin(s.occ) }));
+  $('#payLegend').innerHTML = S.map(s => `<span><i class="key" style="background:${s.c}"></i>${s.name} (가동률 ${Math.round(s.occ * 100)}%)</span>`).join('');
+  const W = Math.max(340, box.clientWidth), H = 320, m = { l: 62, r: 132, t: 14, b: 34 };
+  const vals = S.flatMap(s => [s.f.cum(0), s.f.cum(MONTHS)]), lo = Math.min(0, ...vals), hi = Math.max(0, ...vals), pad = (hi - lo) * 0.06 || 1;
+  const X = k => m.l + k / MONTHS * (W - m.l - m.r), Y = v => m.t + (hi + pad - v) / (hi - lo + 2 * pad) * (H - m.t - m.b);
+  const step = [1e6, 2e6, 5e6, 1e7, 2e7, 5e7, 1e8, 2e8, 5e8].find(s => (hi - lo) / s <= 6) || 1e9;
+  let g = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="누적 현금 흐름. 같은 값은 아래 표에 있습니다.">`;
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1; v += step) {
+    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(${v === 0 ? '--axis' : '--grid'})"/><text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end">${v === 0 ? '0' : signed(v)}</text>`;
+  }
+  for (let k = 0; k <= MONTHS; k += 6) g += `<text x="${X(k)}" y="${H - m.b + 18}" text-anchor="middle">${k === 0 ? '시작' : k + '개월'}</text>`;
+  const ends = S.map(s => ({ s, y: Y(s.f.cum(MONTHS)) })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 30) ends[i].y = ends[i - 1].y + 30;
+  S.forEach(s => {
+    g += `<line x1="${X(0)}" y1="${Y(s.f.cum(0))}" x2="${X(MONTHS)}" y2="${Y(s.f.cum(MONTHS))}" stroke="${s.c}" stroke-width="2" stroke-linecap="round"/>`;
+    if (s.f.payback != null && s.f.payback <= MONTHS) g += `<circle cx="${X(s.f.payback)}" cy="${Y(0)}" r="5" fill="${s.c}" stroke="var(--surface)" stroke-width="2"/>`;
+    g += `<circle cx="${X(MONTHS)}" cy="${Y(s.f.cum(MONTHS))}" r="4" fill="${s.c}" stroke="var(--surface)" stroke-width="2"/>`;
+  });
+  ends.forEach(e => {
+    g += `<text class="strong" x="${X(MONTHS) + 10}" y="${e.y + 1}">${e.s.name} ${signed(e.s.f.cum(MONTHS))}</text>
+      <text x="${X(MONTHS) + 10}" y="${e.y + 15}">회수 ${payText(e.s.f.payback)}</text>`;
+  });
+  g += `<line id="cross" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" stroke="var(--axis)" visibility="hidden"/></svg>`;
+  box.innerHTML = g;
+  const svg = box.firstChild, cross = svg.querySelector('#cross');
+  svg.addEventListener('mousemove', e => {
+    const rc = svg.getBoundingClientRect(), k = Math.round((e.clientX - rc.left - m.l) / (W - m.l - m.r) * MONTHS);
+    if (k < 0 || k > MONTHS) { cross.setAttribute('visibility', 'hidden'); hideTip(); return; }
+    cross.setAttribute('x1', X(k)); cross.setAttribute('x2', X(k)); cross.setAttribute('visibility', 'visible');
+    showTip(`<b>${k === 0 ? '시작 시점' : k + '개월 뒤'}</b> <span class="t2">누적 현금</span><br>` + S.map(s => `<i class="dot" style="background:${s.c}"></i> ${s.name} <b>${signed(s.f.cum(k))}</b>`).join('<br>'), e.clientX, e.clientY);
+  });
+  svg.addEventListener('mouseleave', () => { cross.setAttribute('visibility', 'hidden'); hideTip(); });
+  $('#payBody').innerHTML = S.map(s => `<tr><td><i class="dot" style="background:${s.c}"></i> ${s.name}</td>
+    <td class="num">${Math.round(s.occ * 100)}%</td><td class="num">${s.f.nights.toFixed(1)}박 / ${s.f.bookings.toFixed(1)}건</td>
+    <td class="num">${man(s.f.rev)}</td><td class="num ${s.f.profit >= 0 ? 'pos' : 'neg'}">${signed(s.f.profit)}</td>
+    <td class="num">${payText(s.f.payback)}${s.f.payback != null && s.f.payback <= 120 ? `<br><span class="small">${payDate(s.f.payback)}</span>` : ''}</td>
+    <td class="num">${signed(s.f.cum(MONTHS))}</td><td class="num">${s.f.roi != null ? Math.round(s.f.roi * 100) + '%' : '–'}</td></tr>`).join('');
+}
+
+// ---------- 3. 지역 순위 (같은 예산·같은 가정)
+function drawRank(ES, P) {
+  const shown = e => e.pick.base && e.pick.common;
+  const L = [...ES].sort((x, y) => (shown(y) ? y.pick.base.profit : -Infinity) - (shown(x) ? x.pick.base.profit : -Infinity));
+  const vals = L.filter(shown).map(e => e.pick.base.profit), lo = Math.min(0, ...vals), hi = Math.max(0, ...vals), span = (hi - lo) || 1, zero = -lo / span * 100;
+  $('#rankSub').textContent = `보증금 ${P.dep.toLocaleString()}만·월세 ${P.rent.toLocaleString()}만 이하, 가동률 ${Math.round(P.occ * 100)}%, ${P.tier === 'auto' ? '지역마다 순이익이 가장 큰 집 크기' : TIERS[+P.tier - 1].label} 기준입니다. 지역을 누르면 위아래 모든 내용이 그 지역으로 바뀝니다.`;
+  let h = `<div class="rhead"><div>지역</div><div>월 순이익</div><div></div><div style="text-align:right">세팅비 회수</div><div style="text-align:right">최대 인원 · 1박</div><div style="text-align:right">집 크기</div></div>`;
+  L.forEach(e => {
+    const r = e.pick, b = r.base, sel = state.sel === e.a.name ? ' sel' : '';
+    if (!shown(e)) { h += `<div class="rrow${sel}" data-n="${esc(e.a.name)}"><div class="nm">${esc(e.a.name)}</div><div class="small">${!r.feasible ? `예산 내 계약 부족 (${r.cs.length}건)` : !r.comps ? `비교 숙소 부족 (${r.ls.length}곳)` : `이 예산으로는 구하기 어려움 (이 크기 계약의 ${Math.round(r.share * 100)}%)`}</div><div></div><div></div><div></div><div class="v small">${r.t.label}</div></div>`; return; }
+    const w = Math.abs(b.profit) / span * 100;
+    h += `<div class="rrow${sel}" data-n="${esc(e.a.name)}"><div class="nm">${esc(e.a.name)}</div>
+      <div class="track"><div class="vline" style="left:${zero}%"></div>${b.profit >= 0 ? `<div class="bar r" style="left:${zero}%;width:${w}%"></div>` : `<div class="bar l" style="left:${zero - w}%;width:${w}%"></div>`}</div>
+      <div class="v b ${b.profit < 0 ? 'neg' : ''}">${signed(b.profit)}</div>
+      <div class="v">${payText(b.payback)}</div>
+      <div class="v">${r.capMed != null ? Math.round(r.capMed) + '명' : '–'} · ${man(r.p.n)}</div>
+      <div class="v small">${r.t.label}</div></div>`;
+  });
+  $('#rank').innerHTML = h;
+  $('#rank').querySelectorAll('.rrow').forEach(row => {
+    const e = L.find(x => x.a.name === row.dataset.n), r = e.pick, b = r.base;
+    row.addEventListener('mousemove', ev => showTip(`<b>${esc(e.a.name)}</b> <span class="t2">${e.a.unit} 단위 · ${r.t.label}</span><br>` + (b
+      ? `월 순이익 <b>${signed(b.profit)}</b> · 손익분기 가동률 ${Math.round(r.be * 100)}%<br>1박 평일 ${man(r.p.wd)} / 주말 ${man(r.p.we)}<br>월세 ${man(r.rentM)} · 보증금 ${man(r.depM)}<br><span class="t2">예산 내 계약 ${r.cs.length}건 · 비교 숙소 ${r.ls.length}곳</span>`
+      : '<span class="t2">이 조건으로는 표본이 부족합니다.</span>'), ev.clientX, ev.clientY));
+    row.addEventListener('mouseleave', hideTip);
+    row.addEventListener('click', () => select(e.a.name, true));
+  });
+}
+
+// ---------- 4. 근거: 집 크기별 비교, 실제 계약, 비교 숙소
+function drawEvidence(E, P) {
+  const a = E.a, cur = E.pick;
+  $('#evTitle').textContent = `근거: ${a.name}의 매물과 비교 숙소`;
+  const fit = a.rents.filter(r => r[1] <= P.dep && r[2] <= P.rent);
+  let h = `<p style="margin:10px 0 0">보증금 ${P.dep.toLocaleString()}만원·월세 ${P.rent.toLocaleString()}만원 이하로 최근 6개월에 신규 계약된 집은 <b>${fit.length.toLocaleString()}건</b>입니다(이 지역 월세 계약 ${a.rents.length.toLocaleString()}건의 ${a.rents.length ? Math.round(fit.length / a.rents.length * 100) : 0}%).</p>
+  <div class="tablewrap"><table><thead><tr>
+    <th>집 크기</th><th class="num">예산 내 계약</th><th class="num">보증금 / 월세 (중앙값)</th><th class="num">비교 숙소</th><th class="num">최대 인원</th>
+    <th class="num">1박 평일 / 주말</th><th class="num">손익분기 가동률</th><th class="num">월 순이익</th></tr></thead><tbody>
+    ${E.rows.map(r => `<tr class="row${r.t.k === cur.t.k ? ' sel' : ''}" data-k="${r.t.k}">
+      <td><b>${r.t.label}</b>${E.best && E.best.t.k === r.t.k ? '<span class="badge">순이익 최대</span>' : ''}<br><span class="small">${r.t.size}</span></td>
+      <td class="num">${r.cs.length}건<br><span class="small">${!r.all.length ? '이 크기 계약 없음' : `이 크기 계약 ${r.all.length}건의 ${Math.round(r.share * 100)}%${r.common ? '' : ' · 구하기 어려움'}`}</span></td>
+      <td class="num">${r.cs.length ? `${man(r.depM)} / ${man(r.rentM)}` : '–'}</td>
+      <td class="num">${r.ls.length}곳</td>
+      <td class="num">${r.capMed != null ? `<b>${Math.round(r.capMed)}명</b><br><span class="small">대부분 ${r.capLo}~${r.capHi}명</span>` : '–'}</td>
+      <td class="num">${man(r.p.wd)} / ${man(r.p.we)}</td>
+      <td class="num">${r.be != null ? Math.round(r.be * 100) + '%' : '<span class="small">표본 부족</span>'}</td>
+      <td class="num ${!r.base ? '' : r.base.profit >= 0 ? 'pos' : 'neg'}">${r.base ? signed(r.base.profit) : '–'}</td></tr>`).join('')}
+  </tbody></table></div>`;
+  const G = [['2명 이하', c => c <= 2], ['3~4명', c => c >= 3 && c <= 4], ['5~6명', c => c >= 5 && c <= 6], ['7명 이상', c => c >= 7]];
+  const gr = G.map(([label, f]) => { const ls = a.listings.filter(l => { const c = capOf(l).v; return c != null && f(c); }); return { label, n: ls.length, p: nightly(ls).n }; });
+  const gmax = Math.max(1, ...gr.map(g => g.p || 0));
+  const cs = [...cur.cs].sort((x, y) => (y[7] || '').localeCompare(x[7] || '') || y[0] - x[0]).slice(0, 8);
+  const comps = [...cur.ls].sort((x, y) => y.reviews - x.reviews).slice(0, 10);
+  h += `<div class="two">
+    <div><h3>이 예산으로 실제 계약된 집: ${cur.t.label}</h3>
+      ${cs.length ? `<div class="tablewrap"><table><thead><tr><th>위치</th><th>유형</th><th class="num">면적</th><th class="num">보증금 / 월세</th><th class="num">준공</th><th class="num">계약</th></tr></thead><tbody>
+        ${cs.map(r => `<tr><td>${esc(r[4])}<br><span class="small">${esc(r[5])}</span></td><td>${esc(r[3])}</td><td class="num">${r[0]}㎡</td>
+          <td class="num">${r[1].toLocaleString()}만 / ${r[2]}만</td><td class="num">${esc(r[6])}</td><td class="num">${esc((r[7] || '').replace(/^(\d{4})(\d{2})$/, '$1.$2'))}</td></tr>`).join('')}
+        </tbody></table></div><p class="small">최근 계약순 ${cs.length}건 (예산 내 ${cur.cs.length}건 중). 출처: 국토부 실거래가 공개시스템.</p>`
+      : '<p class="sub">이 크기는 예산 안에서 계약된 사례가 없습니다.</p>'}
+    </div>
+    <div><h3>최대 인원별 1박 요금</h3>
+      <p class="small">이 지역 전체 숙소 기준입니다. 숙소가 5곳 미만인 구간은 흐리게 표시합니다.</p>
+      ${gr.map(g => `<div class="mrow" style="${g.n < MIN_N ? 'opacity:.45' : ''}"><div>${g.label}</div>
+        <div class="track">${g.p ? `<div class="bar r" style="left:0;width:${g.p / gmax * 100}%"></div>` : ''}</div>
+        <div class="v"><b>${man(g.p)}</b> · 숙소 ${g.n}곳</div></div>`).join('')}
+    </div>
+  </div>
+  <h3>비교 숙소: ${cur.t.label.replace('급', '')} 중 후기가 많은 ${comps.length}곳</h3>
+  ${comps.length ? `<div class="tablewrap"><table><thead><tr><th>숙소</th><th>구성</th><th class="num">최대 인원</th><th class="num">평일 1박</th><th class="num">주말 1박</th><th class="num">평점</th><th class="num">후기</th></tr></thead><tbody>
+    ${comps.map(l => `<tr><td><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.name || l.title)}</a><br><span class="small">${esc(l.title)}${l.guest_fav ? ' · 게스트 선호' : ''}</span></td>
+      <td>${esc(l.info)}</td><td class="num">${capText(l)}</td><td class="num">${man(l.prices.weekday)}</td><td class="num">${man(l.prices.weekend)}</td>
+      <td class="num">${l.rating ?? '신규'}</td><td class="num">${l.reviews}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="sub">이 크기의 숙소 표본이 없습니다.</p>'}`;
+  $('#evidence').innerHTML = h;
+  $('#evidence').querySelectorAll('tr.row').forEach(r => r.addEventListener('click', () => { $('#fTier').value = r.dataset.k; render(); }));
+}
+
+// ---------- 5. 유의사항·특이사항
+const detailed = a => a.listings.filter(l => l.d);
+function profile(ls) {
+  const cat = {}, tags = {}, safety = {};
+  let rev = 0;
+  ls.forEach(l => {
+    Object.entries(l.d.cat || {}).forEach(([k, v]) => (cat[k] = cat[k] || []).push(v));
+    Object.entries(l.d.tags || {}).forEach(([k, v]) => { tags[k] = (tags[k] || 0) + v; });
+    (l.d.safety || []).forEach(s => { safety[s] = (safety[s] || 0) + 1; });
+    rev += l.d.n || 0;
+  });
+  return {
+    n: ls.length, rev,
+    cat: Object.fromEntries(Object.entries(cat).map(([k, v]) => [k, avg(v)])),
+    low: avg(ls.filter(l => l.d.low != null).map(l => l.d.low)),
+    tags: Object.fromEntries(Object.entries(tags).map(([k, v]) => [k, rev ? v / rev : 0])),
+    safety, elev: ls.filter(l => l.d.elev).length, parking: ls.filter(l => l.d.parking).length,
+  };
+}
+const ALL = profile(areas.flatMap(detailed));
+function drawCaution(a) {
+  const box = $('#caution');
+  $('#cautionTitle').textContent = `유의사항과 특이사항: ${a.name}`;
+  const ls = detailed(a);
+  if (!ls.length) { box.innerHTML = '<p style="margin:10px 0 0">이 지역은 상세 페이지를 확인한 숙소가 없습니다. <code>python collect_details.py</code>를 실행한 뒤 <code>python build_report.py</code>로 다시 만들면 채워집니다.</p>'; return; }
+  const p = profile(ls), cats = Object.entries(p.cat).sort((x, y) => x[1] - y[1]);
+  const share = re => Object.entries(p.safety).filter(([k]) => re.test(k)).reduce((s, [, v]) => Math.max(s, v), 0);
+  const stairs = share(/계단/), noise = share(/소음/), nopark = share(/주차 불가/);
+  const B = [];
+  if (cats.length) {
+    const [k, v] = cats[0], d = v - (ALL.cat[k] ?? v);
+    B.push(`가장 낮게 평가받는 항목은 <b>${esc(k)}</b>(평균 ${v.toFixed(2)}점)입니다.${d <= -0.04 ? ` 전체 조사 지역 평균보다 ${Math.abs(d).toFixed(2)}점 낮아 이 지역의 약점입니다.` : ' 다만 전체 조사 지역 평균과 비슷한 수준입니다.'}`);
+    const weak = cats.slice(1).filter(([k2, v2]) => v2 - (ALL.cat[k2] ?? v2) <= -0.06).map(([k2, v2]) => `${esc(k2)} ${v2.toFixed(2)}점`);
+    if (weak.length) B.push(`전체 평균보다 눈에 띄게 낮은 항목: ${weak.join(', ')}.`);
+    const strong = cats.filter(([k2, v2]) => v2 - (ALL.cat[k2] ?? v2) >= 0.05).map(([k2]) => esc(k2));
+    if (strong.length) B.push(`전체 평균보다 높게 평가받는 항목: ${strong.join(', ')}.`);
+  }
+  if (p.low != null && ALL.low != null) {
+    const d = p.low - ALL.low;
+    if (Math.abs(d) >= 0.012) B.push(`별점 1~3점 후기 비율이 ${(p.low * 100).toFixed(1)}%로 전체 평균 ${(ALL.low * 100).toFixed(1)}%보다 ${d > 0 ? '높습니다. 불만 후기가 상대적으로 잦은 지역입니다' : '낮습니다'}.`);
+  }
+  if (stairs / p.n >= 0.4) B.push(`조사한 숙소 ${p.n}곳 중 ${stairs}곳이 <b>계단 이용</b>을 고지했습니다. 짐이 많은 해외 게스트에게는 감점 요인이므로 1층이나 엘리베이터가 있는 매물이 유리합니다.`);
+  if (noise / p.n >= 0.2) B.push(`${noise}곳이 <b>소음 가능성</b>을 고지했습니다. 유흥가·대로변·공사 여부를 현장에서 확인하세요.`);
+  if (a.unit === '동') { if (nopark / p.n >= 0.5) B.push(`${nopark}곳이 건물 내 주차 불가입니다. 이 지역은 대중교통 접근성이 예약을 좌우합니다.`); }
+  else if (p.parking / p.n >= 0.6) B.push(`주차 가능(인근·노상 포함)으로 표기한 숙소가 ${p.parking}곳으로 다수입니다. 차량 이동 여행객이 많아 주차가 기본 기대치입니다.`);
+  else if (nopark / p.n >= 0.5) B.push(`${nopark}곳이 건물 내 주차 불가입니다. 차량 여행객이 많은 지역이라면 약점이 될 수 있습니다.`);
+  if (p.elev / p.n <= 0.34) B.push(`엘리베이터가 있다고 표기한 숙소는 ${p.n}곳 중 ${p.elev}곳뿐입니다. 저층이 아니면 짐 운반이 약점이 되고, 엘리베이터가 있는 매물은 차별점이 됩니다.`);
+  const quiet = Object.entries(p.tags).filter(([k, v]) => (ALL.tags[k] || 0) >= 0.1 && v <= ALL.tags[k] * 0.65).sort((x, y) => x[1] / ALL.tags[x[0]] - y[1] / ALL.tags[y[0]]).slice(0, 2);
+  if (quiet.length) B.push(`다른 지역보다 후기에서 덜 언급되는 주제: ${quiet.map(([k, v]) => `<b>${esc(k)}</b>(후기의 ${Math.round(v * 100)}%, 전체 ${Math.round(ALL.tags[k] * 100)}%)`).join(', ')}. 게스트가 이 지역에서 기대하지 않거나 만족하지 못하는 부분일 수 있습니다.`);
+  const special = Object.entries(p.tags).filter(([k, v]) => v >= 0.08 && v >= (ALL.tags[k] || 0) * 1.4).sort((x, y) => y[1] / (ALL.tags[y[0]] || 1e-9) - x[1] / (ALL.tags[x[0]] || 1e-9)).slice(0, 3);
+  if (special.length) B.push(`다른 지역보다 후기에서 자주 언급되는 주제: ${special.map(([k, v]) => `<b>${esc(k)}</b>(후기의 ${Math.round(v * 100)}%)`).join(', ')}.`);
+  if (p.n < 6) B.push(`확인한 숙소가 ${p.n}곳뿐이라 참고만 하세요.`);
+
+  const topTags = Object.entries(p.tags).sort((x, y) => y[1] - x[1]).slice(0, 7), tmax = Math.max(0.01, ...topTags.map(t => t[1]));
+  const notices = Object.entries(p.safety).filter(([k]) => !/설치됨/.test(k)).sort((x, y) => y[1] - x[1]).slice(0, 7);
+  const lo = 4.0, Q = v => Math.max(0, Math.min(100, (v - lo) / (5 - lo) * 100));
+  box.innerHTML = `<ul class="bul">${B.map(b => `<li>${b}</li>`).join('')}</ul>
+  <div class="two">
+    <div><h3>항목별 평점 (5점 만점)</h3>
+      <div class="legend"><span><i class="dot" style="background:var(--s1)"></i>이 지역</span><span><i class="line"></i>전체 조사 지역 평균</span></div>
+      ${Object.keys(ALL.cat).filter(k => p.cat[k] != null).map(k => `<div class="mrow"><div>${esc(k)}</div>
+        <div class="track"><div class="rail" style="left:0;width:100%"></div><i class="tick" style="left:${Q(ALL.cat[k])}%"></i><i class="pt" style="left:${Q(p.cat[k])}%;background:var(--s1)"></i></div>
+        <div class="v"><b>${p.cat[k].toFixed(2)}</b> · 전체 ${ALL.cat[k].toFixed(2)}</div></div>`).join('')}
+      <div class="mrow small"><div></div><div class="ticks">${[4, 4.5, 5].map(v => `<span style="left:${Q(v)}%">${v.toFixed(1)}</span>`).join('')}</div><div></div></div>
+      <p class="small">별점 1~3점 후기 비율: 이 지역 ${p.low != null ? (p.low * 100).toFixed(1) + '%' : '–'} · 전체 ${ALL.low != null ? (ALL.low * 100).toFixed(1) + '%' : '–'}</p>
+    </div>
+    <div><h3>후기에서 많이 언급된 주제</h3>
+      <p class="small">에어비앤비가 후기에서 집계해 공개한 주제별 언급 수 ÷ 후기 수입니다.</p>
+      ${topTags.map(([k, v]) => `<div class="mrow"><div>${esc(k)}</div><div class="track"><div class="bar r" style="left:0;width:${v / tmax * 100}%"></div></div>
+        <div class="v"><b>${Math.round(v * 100)}%</b> · 전체 ${Math.round((ALL.tags[k] || 0) * 100)}%</div></div>`).join('')}
+    </div>
+  </div>
+  <h3>숙소가 고지한 주의 사항</h3>
+  <p>${notices.length ? notices.map(([k, v]) => `<span class="badge" style="margin:0 6px 4px 0">${esc(k)} ${v}/${p.n}곳</span>`).join('') : '<span class="small">고지된 주의 사항이 없습니다.</span>'}
+    <span class="badge" style="margin:0 6px 4px 0">엘리베이터 있음 ${p.elev}/${p.n}곳</span><span class="badge" style="margin:0 6px 4px 0">주차 가능(인근·노상 포함) ${p.parking}/${p.n}곳</span></p>
+  <p class="small">기준: 침실 수별로 후기가 많은 숙소 ${p.n}곳의 상세 페이지 (후기 합계 ${p.rev.toLocaleString()}건).</p>`;
+}
+
+// ---------- 6. 지도
+let map, layers = {}, labels;
+function initMap() {
+  if (!window.L) { $('#map').hidden = true; $('#mapnote').hidden = false; return; }
+  const cs = getComputedStyle(document.body), c1 = cs.getPropertyValue('--s1').trim(), surf = cs.getPropertyValue('--surface').trim();
+  map = L.map('map', { scrollWheelZoom: false });
+  // OSM 기본 타일은 Referer가 없는 요청(file://로 연 페이지)을 차단하므로 Esri 타일을 쓴다
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 18, attribution: 'Tiles &copy; Esri' }).addTo(map);
+  const canvas = L.canvas({ padding: 0.3 });
+  areas.forEach(a => {
+    const g = L.layerGroup();
+    a.listings.forEach(l => {
+      if (l.lat == null) return;
+      L.circleMarker([l.lat, l.lng], { renderer: canvas, radius: 4.5, color: surf, weight: 1.5, fillColor: c1, fillOpacity: 0.85 })
+        .bindTooltip(`<b>${esc(l.name || l.title)}</b><br>${esc(l.info)}<br>1박 ${man(l.nightly)} · 후기 ${l.reviews}`, { direction: 'top' })
+        .on('click', () => window.open(l.url, '_blank', 'noopener')).addTo(g);
+    });
+    layers[a.name] = g;
+  });
+  labels = L.layerGroup().addTo(map);
+  styleMap(true);
+}
+function styleMap(all) {
+  if (!map) return;
+  const vis = areas.filter(inScope), pts = [];
+  labels.clearLayers();
+  areas.forEach(a => {
+    const on = vis.includes(a), g = layers[a.name];
+    on ? g.addTo(map) : g.remove();
+    if (!on) return;
+    const hot = state.sel === a.name;
+    g.eachLayer(m => m.setStyle({ fillOpacity: hot ? 0.9 : 0.25, opacity: hot ? 1 : 0.3 }));
+    const c = a.listings.filter(l => l.lat != null);
+    c.forEach(l => pts.push([l.lat, l.lng]));
+    if (c.length) L.marker([avg(c.map(l => l.lat)), avg(c.map(l => l.lng))], { opacity: 0 })
+      .bindTooltip(a.name, { permanent: true, direction: 'center', className: 'arealabel', interactive: true })
+      .on('click', () => select(a.name, false)).addTo(labels);
+  });
+  const a = byName(state.sel);
+  if (!all && a && vis.includes(a)) {
+    const p = a.listings.filter(l => l.lat != null).map(l => [l.lat, l.lng]);
+    if (p.length) map.fitBounds(p, { padding: [30, 30], maxZoom: 15 });
+  } else if (pts.length) map.fitBounds(pts, { padding: [20, 20] });
+}
+
+// ---------- 연동
+function select(name, toTop) {
+  state.sel = name; $('#fArea').value = name;
+  render(); styleMap(false);
+  if (toTop) window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function render() {
+  const P = params();
+  $('#oOcc').textContent = Math.round(P.occ * 100) + '%'; $('#oCost').textContent = Math.round(P.cost * 100) + '%';
+  const ES = areas.filter(inScope).map(a => evalArea(a, P));
+  if (!state.sel || !ES.some(e => e.a.name === state.sel)) {
+    const top = ES.filter(e => e.pick.base && e.pick.common).sort((x, y) => y.pick.base.profit - x.pick.base.profit)[0] || ES[0];
+    state.sel = top.a.name; $('#fArea').value = state.sel;
+  }
+  const E = ES.find(e => e.a.name === state.sel);
+  drawHero(E, P); drawPayback(E, P); drawRank(ES, P); drawEvidence(E, P); drawCaution(E.a);
+}
+['#fDep', '#fRent', '#fTier', '#fOcc', '#fStay', '#fCost', '#fSetup'].forEach(s => $(s).addEventListener('input', render));
+$('#fScope').addEventListener('change', () => { fillAreas(); render(); $('#fArea').value = state.sel; styleMap(true); });
+$('#fArea').addEventListener('change', e => select(e.target.value, false));
+let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });
+// 처음에는 서울(동 단위)을 연다: 서울 외 시군구는 수익이 실제보다 좋게 나오는 한계가 있어 기본 화면에서 섞지 않는다
+$('#fScope').value = scopes.includes('서울특별시') ? '서울특별시' : '';
+fillAreas(); render(); $('#fArea').value = state.sel; initMap();
+</script>
+</body>
+</html>
