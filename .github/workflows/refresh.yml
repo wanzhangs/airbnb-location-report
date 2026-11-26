@@ -1,7 +1,7 @@
 name: Refresh data
 
 # 에어비앤비 검색 결과·숙소 상세를 새로 수집해 data/와 report.html을 커밋한다.
-# 매주 월요일 03:00(한국 시간)에 자동 실행되고, Actions 탭에서 수동으로도 실행할 수 있다. LLM API나 별도 키는 쓰지 않는다.
+# 매일 03:00(한국 시간)에 자동 실행되고, Actions 탭에서 수동으로도 실행할 수 있다. LLM API나 별도 키는 쓰지 않는다.
 #
 # 임차 비용에는 Update rents 워크플로가 받아 둔 월세 스냅샷(data/rents/)을 쓴다(이 워크플로는 국토부에 접속하지 않는다).
 # 에어비앤비 수집량이 비정상적으로 적으면(차단·접속 실패) 새 러너에서 다시 시도한다(최대 3번).
@@ -14,7 +14,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: '0 18 * * 0'   # 매주 월요일 03:00 (한국 시간, UTC 기준 일요일)
+    - cron: '0 18 * * *'   # 매일 03:00 (한국 시간)
 
 permissions:
   contents: write

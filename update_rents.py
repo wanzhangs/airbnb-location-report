@@ -1,10 +1,10 @@
 """국토부 전월세 실거래(연립다세대·단독다가구, 최근 6개월)를 시도별 스냅샷으로 받아 둔다.
 
 실행:
-    python update_rents.py                 저장한 지 MAX_AGE일(기본 7일)이 지난 것만 다시 받는다
+    python update_rents.py                 저장한 지 MAX_AGE일(기본 1일)이 지난 것만 다시 받는다
     python update_rents.py --max-age 0     전부 다시 받는다
     python update_rents.py --limit 4       이번 실행에서 최대 4개만 받는다
-    python update_rents.py --fail-after 21 아무것도 못 받았고 가장 오래된 스냅샷이 21일을 넘으면 오류(1)로 끝낸다
+    python update_rents.py --fail-after 7  아무것도 못 받았고 가장 오래된 스냅샷이 7일을 넘으면 오류(1)로 끝낸다
 
 출력:
     data/rents/<시도>_<유형>.csv.gz   신규 월세 계약만 추린 것
@@ -39,7 +39,7 @@ PAGE = MOLIT + "/pt/xls/xls.do?mobileAt="
 TODAY = dt.date.today()
 RENT_FROM = TODAY - dt.timedelta(days=183)
 RENT_TO = TODAY
-MAX_AGE = 7
+MAX_AGE = 1                                  # 하루에 한 번 다시 받는다
 TYPES = {"연립다세대": "B", "단독다가구": "C"}
 COLS = ["sgg", "area", "deposit_man", "rent_man", "road", "built", "ym"]
 NET_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException)

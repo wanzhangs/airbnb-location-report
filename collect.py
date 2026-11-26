@@ -1,7 +1,7 @@
 """에어비앤비 숙소 요금 수집 + 국토부 전월세 스냅샷 결합.
 
 실행:
-    python update_rents.py                     국토부 전월세 스냅샷 갱신 (7일 지난 것만 다시 받는다)
+    python update_rents.py                     국토부 전월세 스냅샷 갱신 (오늘 받지 않은 것만 다시 받는다)
     python collect.py                          설정된 지역 중 아직 없는 곳만 수집
     python collect.py --add "부산광역시 기장군"  시군구를 추가하고 수집 (여러 개 가능)
     python collect.py --refresh                모든 지역을 새로 수집
